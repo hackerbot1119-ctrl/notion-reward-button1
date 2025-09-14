@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Reward Widget</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{--bg:#041022;--muted:#93a3b7}
+  body{font-family:Inter,system-ui,Arial;margin:0;background:linear-gradient(180deg,#041022 0%,#071023 100%);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:20px;color:#e6eef8}
+  .card{width:440px;background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));border-radius:14px;padding:18px;box-shadow:0 10px 40px rgba(2,6,23,0.6);}
+  .header{display:flex;gap:12px;align-items:center;margin-bottom:12px}
+  .logo{width:56px;height:56px;border-radius:10px;background:linear-gradient(135deg,#6ee7b7,#60a5fa);display:flex;align-items:center;justify-content:center;font-weight:800;color:#042;font-size:18px}
+  h1{font-size:16px;margin:0}
+  .balance{display:flex;gap:8px;margin-top:6px}
+  .mini{background:rgba(255,255,255,0.02);padding:8px 10px;border-radius:8px;font-weight:700;font-size:13px;color:var(--muted)}
+  .toolbar{display:flex;gap:10px;align-items:center;margin-top:10px}
+  button{cursor:pointer;border:0;padding:12px 14px;border-radius:12px;font-weight:700}
+  .claim{flex:1;background:linear-gradient(90deg,#ffb86b,#ff7ab6);color:#06232a;box-shadow:0 10px 30px rgba(255,122,170,0.12);font-size:16px}
+  .small{background:rgba(255,255,255,0.02);color:var(--muted);font-size:13px;padding:10px 12px}
+  .inputs{display:flex;gap:8px;margin-top:12px}
+  input[type="number"], input[type="text"]{flex:1;padding:10px;border-radius:10px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:inherit}
+  .toasts{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px}
+  .toast{background:#07212a;padding:10px 14px;border-radius:8px;border:1px solid rgba(255,255,255,0.03);color:#bfeaf5}
+  .fly{position:absolute;pointer-events:none;transform-origin:center;will-change:transform,opacity}
+</style>
+</head>
+<body>
+  <div class="card" id="card">
+    <div class="header">
+      <div class="logo">XP</div>
+      <div>
+        <h1>Reward Button</h1>
+        <div class="balance">
+          <div class="mini">XP: <span id="ui-xp">0</span></div>
+          <div class="mini">Coins: <span id="ui-coins">0</span></div>
+          <div class="mini">Diamonds: <span id="ui-diamonds">0</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="toolbar">
+      <button class="claim" id="claimBtn">🎉 Claim Reward</button>
+      <button class="small" id="demoBtn">Test Confetti</button>
+    </div>
+
+    <div class="inputs">
+      <input type="number" id="inp-xp" placeholder="XP (e.g.,25)" value="25">
+      <input type="number" id="inp-coins" placeholder="Coins" value="10">
+      <input type="number" id="inp-diamonds" placeholder="Diamonds" value="0">
+    </div>
+
+    <div style="margin-top:10px;">
+      <input type="text" id="inp-source" placeholder="Source (task name) e.g. Meditation" value="Meditation">
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.5.1/dist/confetti.browser.min.js"></script>
+  <script>
+    const API_URL = '/api/submit';
+
+    let totals = { xp:0, coins:0, diamonds:0 };
+
+    function playTone(type='coin') {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const o = ctx.createOscillator();
+        const g = ctx.createGain();
+        o.type = (type==='diamond' ? 'sine' : 'square');
+        o.frequency.value = (type==='diamond' ? 880 : type==='xp' ? 640 : 440);
+        g.gain.value = 0.06;
+        o.connect(g); g.connect(ctx.destination);
+        o.start();
+        g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.28);
+        setTimeout(()=>{try{o.stop(); ctx.close();}catch(e){}}, 350);
+      } catch(e) {}
+    }
+
+    function spawnFly(icon, count=8) {
+      const root = document.body;
+      for (let i=0;i<count;i++){
+        const el = document.createElement('div');
+        el.className = 'fly';
+        el.style.left = (window.innerWidth/2 + (Math.random()*160-80)) + 'px';
+        el.style.top = (window.innerHeight/2 + (Math.random()*20-40)) + 'px';
+        el.style.fontSize = (18 + Math.random()*20) + 'px';
+        el.style.opacity = '1';
+        el.style.zIndex = 9999;
+        el.innerHTML = icon;
+        root.appendChild(el);
+        const dur = 900 + Math.random()*300;
+        el.animate([
+          { transform: 'translateY(0px) scale(1)', opacity:1 },
+          { transform: `translateY(-240px) translateX(${(Math.random()*240-120)}px) scale(.38)`, opacity:0 }
+        ], { duration: dur, easing: 'cubic-bezier(.2,.9,.2,1)'});
+        setTimeout(()=> el.remove(), dur + 20);
+      }
+    }
+
+    function showToast(txt){
+      const toasts = document.getElementById('toasts');
+      const t = document.createElement('div'); t.className='toast'; t.textContent = txt;
+      toasts.prepend(t);
+      setTimeout(()=> t.remove(), 3500);
+    }
+    function updateUI(){ document.getElementById('ui-xp').textContent = totals.xp; document.getElementById('ui-coins').textContent = totals.coins; document.getElementById('ui-diamonds').textContent = totals.diamonds; }
+
+    async function claimAction(){
+      const xp = Number(document.getElementById('inp-xp').value) || 0;
+      const coins = Number(document.getElementById('inp-coins').value) || 0;
+      const diamonds = Number(document.getElementById('inp-diamonds').value) || 0;
+      const source = document.getElementById('inp-source').value || 'widget';
+
+      const btn = document.getElementById('claimBtn');
+      btn.disabled = true; btn.textContent = 'Claiming...';
+
+      if (coins>0){ playTone('coin'); spawnFly('🪙', Math.min(12, Math.max(4, Math.floor(coins/2)))); }
+      if (xp>0){ playTone('xp'); spawnFly('✨', Math.min(8, Math.max(3, Math.floor(xp/5)))); }
+      if (diamonds>0){ playTone('diamond'); spawnFly('💎', Math.min(6, Math.max(1, diamonds))); confetti({ particleCount: 60, spread: 90, origin: { y: 0.6 } }); }
+
+      totals.xp += xp; totals.coins += coins; totals.diamonds += diamonds; updateUI();
+
+      try {
+        const resp = await fetch(API_URL, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ xp, coins, diamonds, source })
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          totals.xp -= xp; totals.coins -= coins; totals.diamonds -= diamonds; updateUI();
+          showToast('Error saving reward: ' + (data?.error?.message || JSON.stringify(data)));
+        } else {
+          showToast('Reward saved ✅');
+        }
+      } catch (err) {
+        totals.xp -= xp; totals.coins -= coins; totals.diamonds -= diamonds; updateUI();
+        showToast('Network error — check deployment');
+        console.error(err);
+      } finally {
+        btn.disabled = false; btn.textContent = '🎉 Claim Reward';
+      }
+    }
+
+    document.getElementById('claimBtn').addEventListener('click', claimAction);
+    document.getElementById('demoBtn').addEventListener('click', ()=> confetti({ particleCount: 90, spread: 140 }));
+    updateUI();
+  </script>
+</body>
+</html>
